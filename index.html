@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>駅伝・長距離走 ラップ計測アプリ</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* タッチ操作時のハイライト抑制と押しやすさ向上 */
+        button {
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        /* スクロールバーのカスタマイズ */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- ヘッダー -->
+    <header class="bg-indigo-700 text-white shadow-md sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <i data-lucide="timer" class="w-7 h-7"></i>
+                <h1 class="text-xl md:text-2xl font-bold tracking-wide">長距離・駅伝ラップ計測</h1>
+            </div>
+            <div class="flex gap-2">
+                <button id="btn-toggle-names" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg flex items-center gap-1 border border-indigo-400 transition">
+                    <i data-lucide="users" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">生徒・周数設定</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 flex flex-col gap-4">
+
+        <!-- コントロールパネル & 全体タイマー -->
+        <div class="bg-white rounded-xl shadow-md p-4 flex flex-col md:flex-row items-center justify-between gap-4 border border-slate-200">
+            <!-- 全体タイム表示 -->
+            <div class="text-center md:text-left">
+                <span class="text-xs text-slate-500 font-semibold tracking-wider uppercase block">全体経過時間</span>
+                <div id="main-timer" class="text-4xl sm:text-5xl font-mono font-bold text-slate-900 tracking-tight">
+                    00:00.00
+                </div>
+            </div>
+
+            <!-- 操作ボタン群 -->
+            <div class="flex flex-wrap items-center justify-center gap-2 sm:gap-3 w-full md:w-auto">
+                <button id="btn-start" class="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition flex items-center justify-center gap-2 text-lg">
+                    <i data-lucide="play" class="w-6 h-6 fill-current"></i>
+                    <span>一斉スタート</span>
+                </button>
+                <button id="btn-stop" class="flex-1 md:flex-none bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-bold px-5 py-3 rounded-xl shadow transition hidden flex items-center justify-center gap-2 text-lg">
+                    <i data-lucide="pause" class="w-6 h-6 fill-current"></i>
+                    <span>一時停止</span>
+                </button>
+                <button id="btn-undo" class="bg-slate-200 hover:bg-slate-300 active:bg-slate-400 text-slate-700 font-semibold px-4 py-3 rounded-xl transition flex items-center justify-center gap-1 border border-slate-300" title="直前のタップを取り消し" disabled>
+                    <i data-lucide="undo-2" class="w-5 h-5"></i>
+                    <span class="text-sm">取り消し</span>
+                </button>
+                <button id="btn-reset" class="bg-rose-100 hover:bg-rose-200 active:bg-rose-300 text-rose-700 font-semibold px-4 py-3 rounded-xl transition flex items-center justify-center gap-1 border border-rose-200">
+                    <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                    <span class="text-sm">リセット</span>
+                </button>
+                <button id="btn-export" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-3 rounded-xl transition flex items-center justify-center gap-1 border border-slate-300" title="CSVダウンロード">
+                    <i data-lucide="download" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- 選手一覧・タップエリア -->
+        <div id="runner-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            <!-- JSで動的生成 -->
+        </div>
+
+    </main>
+
+    <!-- Modal: 選手名・目標周数設定 -->
+    <div id="modal-names" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div class="p-4 bg-indigo-700 text-white flex justify-between items-center">
+                <h3 class="text-lg font-bold flex items-center gap-2">
+                    <i data-lucide="user-cog" class="w-5 h-5"></i>
+                    生徒管理・周数設定
+                </h3>
+                <button id="btn-close-modal" class="text-white/80 hover:text-white p-1">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            
+            <!-- 一括設定ヘッダー -->
+            <div class="p-3 bg-indigo-50 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2 text-sm text-indigo-900 font-semibold">
+                    <span>一括適用:</span>
+                    <label class="flex items-center gap-1">
+                        <span class="text-xs text-slate-600">1周</span>
+                        <input type="number" id="batch-lap-distance" value="200" min="10" max="10000" step="10" class="w-20 px-2 py-1 border border-indigo-300 rounded text-center bg-white">
+                        <span class="text-xs text-slate-600">m</span>
+                    </label>
+                    <label class="flex items-center gap-1">
+                        <span class="text-xs text-slate-600">×</span>
+                        <input type="number" id="batch-target-laps" value="5" min="1" max="100" class="w-16 px-2 py-1 border border-indigo-300 rounded text-center bg-white">
+                        <span class="text-xs text-slate-600">周</span>
+                    </label>
+                    <button id="btn-apply-batch-laps" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg transition">
+                        一括設定
+                    </button>
+                </div>
+                <button id="btn-add-runner-modal" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 transition">
+                    <i data-lucide="user-plus" class="w-4 h-4"></i>
+                    生徒を追加
+                </button>
+            </div>
+
+            <div class="p-4 overflow-y-auto flex-1 space-y-2" id="name-inputs-container">
+                <!-- 生徒設定入力欄が生成される -->
+            </div>
+            <div class="p-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
+                <button id="btn-save-names" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-2 rounded-xl shadow transition">
+                    保存して閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- メッセージ通知 (トースト) -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-slate-800 text-white px-4 py-3 rounded-xl shadow-xl transition-all duration-300 transform translate-y-10 opacity-0 pointer-events-none z-50 flex items-center gap-2 text-sm">
+        <i data-lucide="info" class="w-4 h-4 text-indigo-400"></i>
+        <span id="toast-message">メッセージ</span>
+    </div>
+
+    <script>
+        // --- 初期設定データ ---
+        const DEFAULT_RUNNERS_COUNT = 10;
+        
+        // ローカルストレージまたはデフォルトデータ
+        let storedRunners = JSON.parse(localStorage.getItem('ekiden_runner_configs'));
+        
+        if (!storedRunners || !Array.isArray(storedRunners) || storedRunners.length === 0) {
+            storedRunners = Array.from({ length: DEFAULT_RUNNERS_COUNT }, (_, i) => ({
+                id: i,
+                name: `生徒 ${i + 1}`,
+                lapDistance: 200, // 初期値: 1周 200m
+                targetLaps: 5 // 初期値: 5周 (1000m)
+            }));
+        }
+
+        // タイマー状態
+        let startTime = 0;
+        let elapsedTime = 0;
+        let timerInterval = null;
+        let isRunning = false;
+
+        // 各生徒のラップ記録データ
+        // 構造: { id: 0, name: '名前', lapDistance: 200, targetLaps: 5, laps: [ ms1, ms2, ... ], finished: false }
+        let runnersData = [];
+
+        // 操作履歴 (Undo用)
+        let actionHistory = [];
+
+        // --- 初期化処理 ---
+        function initData() {
+            runnersData = storedRunners.map((config, index) => ({
+                id: index,
+                name: config.name,
+                lapDistance: config.lapDistance || 200,
+                targetLaps: config.targetLaps || 5,
+                laps: [],
+                finished: false
+            }));
+            actionHistory = [];
+        }
+
+        // モーダル編集用の作業用配列
+        let modalRunnersConfig = [];
+
+        // --- UI構築 ---
+        function renderRunners() {
+            const grid = document.getElementById('runner-grid');
+            grid.innerHTML = '';
+
+            runnersData.forEach((runner, index) => {
+                const currentLapCount = runner.laps.length;
+                const targetLaps = runner.targetLaps;
+                const lapDistance = runner.lapDistance || 200;
+                const isFinished = runner.finished;
+                const distance = currentLapCount * lapDistance;
+                const targetDistance = targetLaps * lapDistance;
+
+                // 最新のラップタイム計算
+                let lastLapText = '-';
+                if (currentLapCount > 0) {
+                    const prevTime = currentLapCount === 1 ? 0 : runner.laps[currentLapCount - 2];
+                    const lapDiff = runner.laps[currentLapCount - 1] - prevTime;
+                    lastLapText = formatLapTime(lapDiff);
+                }
+
+                // トータルタイム
+                const totalTimeText = currentLapCount > 0 
+                    ? formatTime(runner.laps[currentLapCount - 1])
+                    : '00:00.00';
+
+                // カード要素作成
+                const card = document.createElement('div');
+                card.className = `rounded-2xl border transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-sm ${
+                    isFinished 
+                        ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-400' 
+                        : currentLapCount > 0 
+                            ? 'bg-white border-indigo-200' 
+                            : 'bg-white border-slate-200'
+                }`;
+
+                // ラップ履歴の表示作成（スクロール対応）
+                let lapBadgeListHtml = '';
+                for (let i = 0; i < targetLaps; i++) {
+                    if (i < currentLapCount) {
+                        const pTime = i === 0 ? 0 : runner.laps[i - 1];
+                        const lDiff = runner.laps[i] - pTime;
+                        lapBadgeListHtml += `
+                            <div class="flex justify-between items-center text-xs py-0.5 border-b border-slate-100 last:border-0">
+                                <span class="text-slate-400">${(i + 1) * lapDistance}m</span>
+                                <span class="font-mono font-medium text-slate-700">${formatLapTime(lDiff)}</span>
+                            </div>`;
+                    } else {
+                        lapBadgeListHtml += `
+                            <div class="flex justify-between items-center text-xs py-0.5 border-b border-slate-100 last:border-0 opacity-40">
+                                <span class="text-slate-400">${(i + 1) * lapDistance}m</span>
+                                <span class="font-mono text-slate-400">--:--.--</span>
+                            </div>`;
+                    }
+                }
+
+                card.innerHTML = `
+                    <!-- ヘッダー (名前 & 距離/目標) -->
+                    <div class="p-3 bg-slate-50/80 border-b border-slate-100 flex justify-between items-center gap-1">
+                        <div class="flex items-center gap-1.5 overflow-hidden">
+                            <span class="text-xs font-bold w-5 h-5 rounded-full ${isFinished ? 'bg-emerald-600' : 'bg-slate-700'} text-white flex items-center justify-center shrink-0">
+                                ${index + 1}
+                            </span>
+                            <span class="font-bold text-slate-800 truncate text-sm sm:text-base">${escapeHtml(runner.name)}</span>
+                        </div>
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                            isFinished ? 'bg-emerald-200 text-emerald-800' : 'bg-indigo-100 text-indigo-700'
+                        }">
+                            ${isFinished ? `GOAL ${targetDistance}m` : `${distance}m / ${targetDistance}m (${targetLaps}周)`}
+                        </span>
+                    </div>
+
+                    <!-- メインラップ情報 -->
+                    <div class="p-3 flex-1 flex flex-col justify-center">
+                        <div class="flex justify-between items-end mb-2">
+                            <div>
+                                <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">前周ラップ(${lapDistance}m)</span>
+                                <span class="text-xl font-mono font-bold ${isFinished ? 'text-emerald-700' : 'text-indigo-600'}">
+                                    ${lastLapText}
+                                </span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">累積タイム</span>
+                                <span class="text-sm font-mono font-semibold text-slate-600">
+                                    ${totalTimeText}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- 各周の細かな履歴 (最大高さ設定でスクロール可) -->
+                        <div class="bg-slate-50/50 rounded-lg p-2 border border-slate-100 max-h-32 overflow-y-auto space-y-0.5">
+                            ${lapBadgeListHtml}
+                        </div>
+                    </div>
+
+                    <!-- タップエリア (ボタン) -->
+                    <div class="p-2 bg-slate-50 border-t border-slate-100 flex gap-1.5">
+                        <button 
+                            onclick="recordLap(${runner.id})"
+                            ${isFinished || !isRunning ? 'disabled' : ''}
+                            class="flex-1 py-3 px-3 rounded-xl font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm ${
+                                isFinished 
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                                    : !isRunning
+                                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                        : 'bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white shadow-indigo-200'
+                            }"
+                        >
+                            <i data-lucide="${isFinished ? 'check-circle-2' : 'flag'}" class="w-5 h-5 shrink-0"></i>
+                            <span class="truncate">${isFinished ? 'ゴール完了' : `通過 (${distance + lapDistance}m)`}</span>
+                        </button>
+                        <button 
+                            onclick="undoRunnerLap(${runner.id})"
+                            ${currentLapCount === 0 ? 'disabled' : ''}
+                            class="px-2.5 py-3 rounded-xl font-semibold border transition-all flex items-center justify-center shrink-0 ${
+                                currentLapCount === 0
+                                    ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'
+                                    : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200 active:scale-95'
+                            }"
+                            title="この生徒の直前タップを取り消す"
+                        >
+                            <i data-lucide="undo-2" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                `;
+
+                grid.appendChild(card);
+            });
+
+            // アイコン再描画
+            lucide.createIcons();
+
+            // Undoボタンの状態更新
+            document.getElementById('btn-undo').disabled = actionHistory.length === 0;
+        }
+
+        // --- タイマー処理 ---
+        function updateTimer() {
+            const now = Date.now();
+            elapsedTime = now - startTime;
+            document.getElementById('main-timer').textContent = formatTime(elapsedTime);
+        }
+
+        function startTimer() {
+            if (isRunning) return;
+            isRunning = true;
+            startTime = Date.now() - elapsedTime;
+            timerInterval = setInterval(updateTimer, 10);
+
+            document.getElementById('btn-start').classList.add('hidden');
+            document.getElementById('btn-stop').classList.remove('hidden');
+
+            showToast("計測を開始しました");
+            renderRunners();
+        }
+
+        function stopTimer() {
+            if (!isRunning) return;
+            isRunning = false;
+            clearInterval(timerInterval);
+
+            document.getElementById('btn-start').classList.remove('hidden');
+            document.getElementById('btn-stop').classList.add('hidden');
+
+            showToast("一時停止しました");
+            renderRunners();
+        }
+
+        function resetTimer() {
+            if (confirm("全ての記録をリセットしますか？")) {
+                isRunning = false;
+                clearInterval(timerInterval);
+                elapsedTime = 0;
+                document.getElementById('main-timer').textContent = "00:00.00";
+
+                document.getElementById('btn-start').classList.remove('hidden');
+                document.getElementById('btn-stop').classList.add('hidden');
+
+                initData();
+                renderRunners();
+                showToast("リセットしました");
+            }
+        }
+
+        // --- ラップ計測処理 ---
+        window.recordLap = function(runnerId) {
+            if (!isRunning) return;
+
+            const runner = runnersData[runnerId];
+            if (!runner || runner.finished) return;
+
+            const currentLapTimestamp = elapsedTime;
+            runner.laps.push(currentLapTimestamp);
+
+            // 目標周数到達でゴール
+            if (runner.laps.length >= runner.targetLaps) {
+                runner.finished = true;
+                const totalDist = runner.targetLaps * (runner.lapDistance || 200);
+                showToast(`${runner.name} がゴールしました！(${totalDist}m)`);
+            }
+
+            actionHistory.push({
+                runnerId: runnerId,
+                timestamp: currentLapTimestamp
+            });
+
+            renderRunners();
+        };
+
+        // --- 生徒ごとの誤タップ取り消し ---
+        window.undoRunnerLap = function(runnerId) {
+            const runner = runnersData[runnerId];
+            if (!runner || runner.laps.length === 0) return;
+
+            runner.laps.pop();
+            runner.finished = false; // ゴール状態を解除
+
+            for (let i = actionHistory.length - 1; i >= 0; i--) {
+                if (actionHistory[i].runnerId === runnerId) {
+                    actionHistory.splice(i, 1);
+                    break;
+                }
+            }
+
+            renderRunners();
+            showToast(`${runner.name} の直前のラップを取り消しました`);
+        };
+
+        // --- 全体誤タップ取り消し ---
+        function undoLastLap() {
+            if (actionHistory.length === 0) return;
+
+            const lastAction = actionHistory.pop();
+            const runner = runnersData[lastAction.runnerId];
+
+            if (runner && runner.laps.length > 0) {
+                runner.laps.pop();
+                runner.finished = false;
+                renderRunners();
+                showToast(`${runner.name} の直前のラップを取り消しました`);
+            }
+        }
+
+        // --- 生徒名・周数設定モーダル処理 ---
+        function openNamesModal() {
+            // 作業用データにディープコピー
+            modalRunnersConfig = storedRunners.map(r => ({ ...r }));
+            renderModalInputs();
+            document.getElementById('modal-names').classList.remove('hidden');
+        }
+
+        function renderModalInputs() {
+            const container = document.getElementById('name-inputs-container');
+            container.innerHTML = '';
+
+            modalRunnersConfig.forEach((cfg, index) => {
+                const item = document.createElement('div');
+                item.className = 'flex flex-wrap sm:flex-nowrap items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200';
+                item.innerHTML = `
+                    <span class="text-xs font-bold w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                        ${index + 1}
+                    </span>
+                    <input type="text" data-idx="${index}" value="${escapeHtml(cfg.name)}" class="input-modal-name flex-1 min-w-[110px] px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="生徒名">
+                    <div class="flex items-center gap-1 shrink-0 bg-white px-2 py-1 rounded-lg border border-slate-200">
+                        <span class="text-xs text-slate-500">1周:</span>
+                        <input type="number" min="10" max="10000" step="10" data-idx="${index}" value="${cfg.lapDistance || 200}" class="input-modal-dist w-16 px-1.5 py-1 border border-slate-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <span class="text-xs text-slate-500">m</span>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0 bg-white px-2 py-1 rounded-lg border border-slate-200">
+                        <span class="text-xs text-slate-500">周数:</span>
+                        <input type="number" min="1" max="100" data-idx="${index}" value="${cfg.targetLaps || 5}" class="input-modal-laps w-14 px-1.5 py-1 border border-slate-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <span class="text-xs text-slate-500">周</span>
+                    </div>
+                    <button onclick="removeRunnerModal(${index})" class="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition ml-auto" title="削除">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                `;
+                container.appendChild(item);
+            });
+
+            lucide.createIcons();
+        }
+
+        window.removeRunnerModal = function(index) {
+            if (modalRunnersConfig.length <= 1) {
+                alert("生徒は最低1名登録されている必要があります。");
+                return;
+            }
+            modalRunnersConfig.splice(index, 1);
+            renderModalInputs();
+        };
+
+        function addRunnerModal() {
+            const nextNum = modalRunnersConfig.length + 1;
+            modalRunnersConfig.push({
+                id: Date.now(),
+                name: `生徒 ${nextNum}`,
+                lapDistance: 200,
+                targetLaps: 5
+            });
+            renderModalInputs();
+            // 自動スクロール
+            const container = document.getElementById('name-inputs-container');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function applyBatchLaps() {
+            const distVal = parseInt(document.getElementById('batch-lap-distance').value, 10);
+            const lapsVal = parseInt(document.getElementById('batch-target-laps').value, 10);
+
+            if (isNaN(distVal) || distVal < 1) {
+                alert("1周の距離は1m以上を入力してください。");
+                return;
+            }
+            if (isNaN(lapsVal) || lapsVal < 1) {
+                alert("周数は1以上の数字を入力してください。");
+                return;
+            }
+
+            // モーダル上の入力フィールドに反映
+            const distInputs = document.querySelectorAll('.input-modal-dist');
+            const lapInputs = document.querySelectorAll('.input-modal-laps');
+
+            distInputs.forEach((input, idx) => {
+                input.value = distVal;
+                if (modalRunnersConfig[idx]) {
+                    modalRunnersConfig[idx].lapDistance = distVal;
+                }
+            });
+
+            lapInputs.forEach((input, idx) => {
+                input.value = lapsVal;
+                if (modalRunnersConfig[idx]) {
+                    modalRunnersConfig[idx].targetLaps = lapsVal;
+                }
+            });
+
+            renderModalInputs();
+            showToast(`全員を 1周${distVal}m × ${lapsVal}周 に設定しました`);
+        }
+
+        function closeNamesModal() {
+            document.getElementById('modal-names').classList.add('hidden');
+        }
+
+        function saveNames() {
+            // モーダルの入力フィールドから値を取得
+            const nameInputs = document.querySelectorAll('.input-modal-name');
+            const distInputs = document.querySelectorAll('.input-modal-dist');
+            const lapInputs = document.querySelectorAll('.input-modal-laps');
+
+            const updatedConfigs = [];
+            nameInputs.forEach((input, idx) => {
+                const nameVal = input.value.trim() || `生徒 ${idx + 1}`;
+                const distVal = parseInt(distInputs[idx].value, 10) || 200;
+                const lapsVal = parseInt(lapInputs[idx].value, 10) || 5;
+                updatedConfigs.push({
+                    id: idx,
+                    name: nameVal,
+                    lapDistance: distVal,
+                    targetLaps: lapsVal
+                });
+            });
+
+            storedRunners = updatedConfigs;
+            localStorage.setItem('ekiden_runner_configs', JSON.stringify(storedRunners));
+            
+            closeNamesModal();
+            initData();
+            renderRunners();
+            showToast("生徒設定を保存しました");
+        }
+
+        // --- CSVエクスポート ---
+        function exportCSV() {
+            let csv = "\uFEFF"; // UTF-8 BOM
+            
+            // 最大周数を求めてヘッダー生成
+            let maxLaps = 0;
+            runnersData.forEach(r => {
+                if (r.targetLaps > maxLaps) maxLaps = r.targetLaps;
+            });
+
+            let header = "番号,名前,1周距離(m),目標周数,目標距離(m)";
+            for (let i = 1; i <= maxLaps; i++) {
+                header += `,${i}周目ラップ,${i}周目累計`;
+            }
+            csv += header + "\n";
+
+            runnersData.forEach((r, idx) => {
+                const lapDist = r.lapDistance || 200;
+                let line = `${idx + 1},"${r.name.replace(/"/g, '""')}",${lapDist},${r.targetLaps},${r.targetLaps * lapDist}`;
+                for (let i = 0; i < maxLaps; i++) {
+                    if (i < r.laps.length) {
+                        const prevTime = i === 0 ? 0 : r.laps[i - 1];
+                        const lapDiff = r.laps[i] - prevTime;
+                        line += `,${formatLapTime(lapDiff)},${formatTime(r.laps[i])}`;
+                    } else {
+                        line += `,,`;
+                    }
+                }
+                csv += line + "\n";
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `lap_result_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // --- フォーマット補助関数 ---
+        function formatTime(ms) {
+            const minutes = Math.floor(ms / 60000);
+            const seconds = Math.floor((ms % 60000) / 1000);
+            const centiseconds = Math.floor((ms % 1000) / 10);
+
+            const m = String(minutes).padStart(2, '0');
+            const s = String(seconds).padStart(2, '0');
+            const cs = String(centiseconds).padStart(2, '0');
+
+            return `${m}:${s}.${cs}`;
+        }
+
+        function formatLapTime(ms) {
+            if (ms < 0) return '00:00.00';
+            const minutes = Math.floor(ms / 60000);
+            const seconds = Math.floor((ms % 60000) / 1000);
+            const centiseconds = Math.floor((ms % 1000) / 10);
+
+            const m = String(minutes).padStart(2, '0');
+            const s = String(seconds).padStart(2, '0');
+            const cs = String(centiseconds).padStart(2, '0');
+
+            return `${m}:${s}.${cs}`;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+            });
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-message');
+            toastMsg.textContent = msg;
+            toast.classList.remove('translate-y-10', 'opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('translate-y-10', 'opacity-0', 'pointer-events-none');
+            }, 2500);
+        }
+
+        // --- イベントリスナー設定 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initData();
+            renderRunners();
+
+            document.getElementById('btn-start').addEventListener('click', startTimer);
+            document.getElementById('btn-stop').addEventListener('click', stopTimer);
+            document.getElementById('btn-reset').addEventListener('click', resetTimer);
+            document.getElementById('btn-undo').addEventListener('click', undoLastLap);
+            document.getElementById('btn-export').addEventListener('click', exportCSV);
+
+            document.getElementById('btn-toggle-names').addEventListener('click', openNamesModal);
+            document.getElementById('btn-close-modal').addEventListener('click', closeNamesModal);
+            document.getElementById('btn-save-names').addEventListener('click', saveNames);
+            document.getElementById('btn-add-runner-modal').addEventListener('click', addRunnerModal);
+            document.getElementById('btn-apply-batch-laps').addEventListener('click', applyBatchLaps);
+
+            // モーダル外クリックで閉じる
+            document.getElementById('modal-names').addEventListener('click', (e) => {
+                if (e.target.id === 'modal-names') closeNamesModal();
+            });
+        });
+    </script>
+</body>
+</html>
